@@ -33,8 +33,8 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
 )
-load_dotenv()
 
+load_dotenv()
 DATABASE_USER = os.environ["DB_USER"]
 DATABASE_PASSWORD = os.environ["DB_PASSWORD"]
 DATABASE_HOST = os.environ["DB_HOST"]
