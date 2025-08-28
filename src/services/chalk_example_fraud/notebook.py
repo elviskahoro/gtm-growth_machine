@@ -9,8 +9,10 @@ import polars as pl
 from chalk.client import ChalkClient
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.semconv.resource import ResourceAttributes
 
 if TYPE_CHECKING:
     from chalk.client.response import OnlineQueryResult
@@ -20,7 +22,14 @@ if TYPE_CHECKING:
 
 def setup_otel(hyperdx_api_key: str) -> trace.Tracer:
     """Setup OpenTelemetry tracing with HyperDX."""
-    trace.set_tracer_provider(TracerProvider())
+    resource = Resource.create(
+        {
+            ResourceAttributes.SERVICE_NAME: "data_gen-fathom-calls",
+            ResourceAttributes.SERVICE_VERSION: "1.0.0",
+        },
+    )
+
+    trace.set_tracer_provider(TracerProvider(resource=resource))
 
     otlp_exporter = OTLPSpanExporter(
         endpoint="https://in-otel.hyperdx.io/v1/traces",
@@ -134,3 +143,74 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+
+
+# trunk-ignore-begin(ruff/ANN002,ruff/ANN003,ruff/BLE001,ruff/PLC0415,ruff/PLR0912,ruff/PLR0915,ruff/PLR2004,ruff/S101)
+
+
+def test_otel_connection() -> None:
+    """Test OpenTelemetry connection with fake data."""
+    hyperdx_api_key: str | None = os.getenv("HYPERDX_API_KEY")
+
+    if hyperdx_api_key is None:
+        msg: str = "HYPERDX_API_KEY environment variable must be set"
+        raise ValueError(msg)
+
+    print("Setting up OpenTelemetry...")
+    tracer: trace.Tracer = setup_otel(hyperdx_api_key)
+
+    # Send fake test data
+    with tracer.start_as_current_span("test_fathom_call_processing") as span:
+        span.set_attribute("test", True)
+        span.set_attribute("total_recordings", 2)
+
+        # Test recording 1
+        with tracer.start_as_current_span("test_process_recording") as recording_span:
+            recording_span.set_attribute("recording_id", "test_recording_123")
+            recording_span.set_attribute("recording_index", 0)
+
+            fake_data = {
+                "fathom_call.id": "test_recording_123",
+                "fathom_call.title": "Test Sales Call",
+                "fathom_call.duration": 3600,
+                "fathom_call.participants": ["alice@example.com", "bob@example.com"],
+                "fathom_call.created_at": "2024-01-15T10:00:00Z",
+                "fathom_call.sentiment": "positive",
+            }
+
+            recording_span.add_event(
+                "fathom_call_data",
+                {
+                    "recording_id": "test_recording_123",
+                    "data": json.dumps(fake_data),
+                    "fields_removed_count": 6,
+                    "test_data": True,
+                },
+            )
+
+            recording_span.set_attribute("status", "success")
+            print("✓ Sent test recording 1")
+
+        # Test recording 2 with error scenario
+        with tracer.start_as_current_span("test_process_recording") as recording_span:
+            recording_span.set_attribute("recording_id", "test_recording_456")
+            recording_span.set_attribute("recording_index", 1)
+
+            # Simulate an error
+            recording_span.set_attribute("status", "error")
+            recording_span.set_attribute("error", "Test error: API rate limit exceeded")
+            recording_span.add_event(
+                "error", {"message": "Test error: API rate limit exceeded"},
+            )
+            print("✓ Sent test recording 2 (with error)")
+
+    print("✓ Test data sent to HyperDX via OpenTelemetry")
+    print(
+        "Check your HyperDX dashboard for traces with 'test_fathom_call_processing' span name",
+    )
+
+
+# trunk-ignore-end(ruff/ANN002,ruff/ANN003,ruff/BLE001,ruff/PLC0415,ruff/PLR0912,ruff/PLR0915,ruff/PLR2004,ruff/S101)
