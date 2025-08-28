@@ -16,3 +16,6 @@ reflex
 s3fs
 uuid7
 openai
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp
